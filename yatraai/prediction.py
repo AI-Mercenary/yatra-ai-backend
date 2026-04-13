@@ -11,10 +11,8 @@ from typing import Any
 
 import numpy as np
 import requests
-try:
-    import tensorflow as tf
-except (ImportError, Exception):
-    tf = None
+# Deferred import of tensorflow
+tf = None
 from PIL import Image
 from werkzeug.datastructures import FileStorage
 
@@ -24,7 +22,11 @@ _VISION_JPEG_QUALITY = 88
 _TOP_K_HINTS = 5
 
 
-def _create_placeholder_model(num_classes: int) -> tf.keras.Model:
+def _create_placeholder_model(num_classes: int) -> Any:
+    global tf
+    if tf is None:
+        import tensorflow as tf
+        
     model = tf.keras.Sequential(
         [
             tf.keras.layers.Input(shape=(128, 128, 3)),
@@ -132,10 +134,18 @@ class MonumentPredictor:
         self.model_path = model_path
         self.model = None
 
-    def _get_model(self) -> tf.keras.Model | None:
+    def _get_model(self) -> Any | None:
         """Lazy load the model to avoid blocking app startup on cloud providers."""
-        if self.model is not None or tf is None:
+        global tf
+        if self.model is not None:
             return self.model
+            
+        try:
+            if tf is None:
+                import tensorflow as t_flow
+                tf = t_flow
+        except (ImportError, Exception):
+            return None
 
         self.model = _load_or_create_model(self.model_path, self._num_classes)
         return self.model
