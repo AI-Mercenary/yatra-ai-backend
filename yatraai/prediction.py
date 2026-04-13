@@ -24,7 +24,7 @@ _VISION_JPEG_QUALITY = 88
 _TOP_K_HINTS = 5
 
 
-def _create_placeholder_model(save_path: str, num_classes: int) -> tf.keras.Model:
+def _create_placeholder_model(num_classes: int) -> tf.keras.Model:
     model = tf.keras.Sequential(
         [
             tf.keras.layers.Input(shape=(128, 128, 3)),
@@ -38,7 +38,6 @@ def _create_placeholder_model(save_path: str, num_classes: int) -> tf.keras.Mode
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
-    model.save(save_path, save_format="h5")
     return model
 
 
@@ -47,9 +46,8 @@ def _load_or_create_model(model_path: str, num_classes: int) -> tf.keras.Model:
         try:
             return tf.keras.models.load_model(model_path)
         except Exception:
-            # If load fails (corrupt, incompatible version), fall back to placeholder
             pass
-    return _create_placeholder_model(model_path, num_classes)
+    return _create_placeholder_model(num_classes)
 
 
 def _encode_pil_jpeg_b64(img: Image.Image) -> str:
@@ -131,12 +129,16 @@ class MonumentPredictor:
             
         self._num_classes = len(self.class_names)
         self.top1_threshold = top1_threshold
-        
-        if tf is None:
-            self.model = None
-            return
+        self.model_path = model_path
+        self.model = None
 
-        self.model = _load_or_create_model(model_path, self._num_classes)
+    def _get_model(self) -> tf.keras.Model | None:
+        """Lazy load the model to avoid blocking app startup on cloud providers."""
+        if self.model is not None or tf is None:
+            return self.model
+
+        self.model = _load_or_create_model(self.model_path, self._num_classes)
+        return self.model
 
     def predict(
         self,
@@ -153,8 +155,10 @@ class MonumentPredictor:
         p_top1 = 0.0
         class_index = 0
         top_candidates = []
+        
+        model = self._get_model()
 
-        if self.model:
+        if model:
             img_resized = pil_full.resize((128, 128), Image.Resampling.LANCZOS)
             arr = np.array(img_resized) / 255.0
             batch = np.expand_dims(arr, axis=0)
@@ -170,7 +174,7 @@ class MonumentPredictor:
                 top_candidates = []
         
         # If local model exists and confidence is high, use it.
-        if self.model and p_top1 >= self.top1_threshold:
+        if model and p_top1 >= self.top1_threshold:
             name = (
                 self.class_names[class_index]
                 if class_index < len(self.class_names)
