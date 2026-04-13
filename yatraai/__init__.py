@@ -18,7 +18,11 @@ def create_app(config_class: type = Config) -> Flask:
         static_folder=os.path.join(root, "static"),
     )
     app.config.from_object(config_class)
-    CORS(app, resources={r"/*": {"origins": "*"}}) # Allow all origins for the frontend
+    CORS(app,
+         resources={r"/*": {"origins": "*"}},
+         allow_headers=["Content-Type", "Authorization", "Accept"],
+         methods=["GET", "POST", "OPTIONS"],
+         supports_credentials=False)
 
     try:
         app.config["PREDICTOR"] = MonumentPredictor(
